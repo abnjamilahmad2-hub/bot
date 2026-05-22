@@ -55,19 +55,21 @@ class AIClient:
             return None  # None = retry / fallback
 
     # ── OpenRouter (Free Fallback) ──
-    async def _openrouter(self, system_prompt, user_prompt, session):
+    async def _openrouter(self, system_prompt, user_prompt, json_mode, session):
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.openrouter_key}",
         }
         payload = {
-            "model": "google/gemini-2.0-flash-exp:free",
+            "model": "openrouter/free",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         async with session.post(
             url,
             headers=headers,
@@ -133,7 +135,7 @@ class AIClient:
             )
             try:
                 result = await self._openrouter(
-                    system_prompt, user_prompt, session
+                    system_prompt, user_prompt, json_mode, session
                 )
                 if result is not None:
                     return result

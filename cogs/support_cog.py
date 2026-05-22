@@ -2,83 +2,120 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
-from shared.database import get_db_session, ensure_user_and_guild
-from shared.models import Guild
-from sqlalchemy import select
-from shared.cache import get_cache, set_cache
+import datetime
 
-# الرتب التي تُعطي صلاحية تنفيذ أي أمر دون اعتراض
-TRUSTED_ROLES = {"Owner", "Server Administration", "Founder", "Co Founder", "High"}
-
-# نص القواعد (مُجمل للـ AI)
 RULES_TEXT = """قواعد السيرفر:
-1. يجب احترام جميع الأعضاء وعدم مضايقتهم بأي شكل من الأشكال.
+1. يجب احترام جميع الأعضاء وعدم مضايقتهم.
 2. يمنع إزعاج الأعضاء أو التنمر عليهم.
-3. يجب احترام خصوصية الأعضاء وعدم مضايقتهم أو إحراجهم.
-4. يمنع نشر صور مسيئة أو غير لائقة أو ما شابه.
-5. يمنع الترويج لسيرفر آخر علنًا أو بشكل خاص.
-6. السيرفر غير مسؤول عن المشاكل الشخصية، يرجى حلها خارج السيرفر.
-7. يمنع دخول السيرفر بصورة أو اسم غير لائق.
-8. لا يجوز نشر روابط أو صور مثل صور القتل أو الصور الفاضحة.
-9. يمنع إرسال الرسائل المكررة (Spam) أو الإشارات العشوائية (Mentions) دون سبب واضح.
-10. يجب الالتزام بموضوع كل قناة واستخدام القنوات المخصصة لكل غرض.
-11. يمنع إثارة الجدل في المواضيع السياسية أو الدينية أو العنصرية.
-12. يمنع استخدام برامج تغيير الصوت أو إصدار أصوات مزعجة داخل القنوات الصوتية.
-13. يمنع انتحال شخصية أي عضو أو أفراد طاقم الإدارة.
-14. يمنع نشر أي روابط مشبوهة أو ملفات قد تضر بأجهزة الأعضاء.
-15. الإدارة لها الحق في اتخاذ القرار المناسب تجاه أي تصرف غير مذكور في القوانين.
-16. نتبع قواعد الديسكورد الرسمية.
+3. يمنع نشر صور مسيئة أو غير لائقة.
+4. يمنع الترويج لسيرفر آخر.
+5. يمنع نشر روابط خطيرة أو صور الفاضحة.
+6. يمنع إرسال الرسائل المكررة (Spam).
+7. يمنع إثارة الجدل في المواضيع السياسية أو الدينية.
+8. يمنع انتحال شخصية الإدارة.
 """
 
 class SupportCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-    async def _ensure_guild(self, guild: discord.Guild):
-        async for session in get_db_session():
-            await ensure_user_and_guild(session, self.bot.user.id, guild.id, guild.name)
-            stmt = select(Guild).where(Guild.id == guild.id)
-            result = await session.execute(stmt)
-            guild_record = result.scalar_one_or_none()
-            if not guild_record:
-                guild_record = Guild(id=guild.id, name=guild.name)
-                session.add(guild_record)
-                await session.commit()
-
-    @app_commands.command(name="support", description="مساعد كتابي للإجابة على أسئلتك حول قوانين وأنظمة السيرفر.")
-    @app_commands.describe(question="سؤالك أو استفسارك")
-    async def support(self, interaction: discord.Interaction, question: str):
-        # تأكيد تسجيل السيرفر
-        if interaction.guild:
-            await self._ensure_guild(interaction.guild)
-            
-        await interaction.response.defer(ephemeral=False, thinking=True)
-        
-        # استيراد ai_client محلياً لتجنب مشاكل الاستيراد
-        from shared.ai_client import ai_client
-        
-        prompt = f"""أنت مساعد الدعم الفني لسيرفر !808.
-مهمتك هي الإجابة على استفسارات الأعضاء بوضوح واحترام بناءً على القوانين التالية:
+        self.support_prompt = f"""أنت المساعد الذكي لسيرفر !808 ولديك صلاحيات إدارية كاملة لحل المشاكل.
+القوانين:
 {RULES_TEXT}
 
-إذا سأل العضو سؤالاً لا يتعلق بالقوانين أو الدعم الفني، أجب بلباقة ووجهه للقوانين أو قل أنك مخصص للدعم فقط.
-ردك يجب أن يكون قصيراً وواضحاً ومفيداً، وباللغة العربية المريحة.
-"""
-        user_prompt = f"المستخدم {interaction.user.display_name} يسأل: {question}"
-        
-        try:
-            ai_response = await ai_client.chat(prompt, user_prompt)
-            if not ai_response or ai_response in ("RATE_LIMIT", "SAFETY_FILTER"):
-                ai_response = "عذراً، أواجه ضغطاً حالياً ولا يمكنني الرد. يرجى المحاولة لاحقاً."
-                
-            # إرسال الرد
-            if len(ai_response) <= 2000:
-                await interaction.followup.send(ai_response)
-            else:
-                await interaction.followup.send(ai_response[:2000])
-        except Exception as e:
-            await interaction.followup.send("❌ حدث خطأ أثناء معالجة طلبك.")
+يتم تزويدك بسؤال المستخدم، وربما شخص مستهدف (Target) وسبب (Reason).
+الخيارات:
+1. إذا كان استفساراً عادياً: أجب عليه بلباقة.
+2. إذا طلب معاقبة شخص وكان هناك سبب ومخالفة صريحة للقوانين: قرر العقاب.
+3. إذا كانت المشكلة خارجة عن إرادتك أو تحتاج تدخلاً بشرياً من الإدارة: قم بفتح تذكرة.
 
+رد بـ JSON فقط بالصيغة التالية:
+{{
+  "type": "answer" | "action" | "ticket",
+  "message": "ردك الذي سيظهر للمستخدم (سواء كإجابة أو كرسالة توضيح لفتح التذكرة أو العقوبة)",
+  "action": "timeout_10m" | "kick" | "ban" | "none",
+  "ticket_reason": "سبب فتح التذكرة إذا كان type هو ticket (شرح للإدارة)"
+}}
+حاول دائماً حل المشكلة بأفضل شكل ممكن.
+"""
+
+    @app_commands.command(name="support", description="مساعد الإدارة الذكي (لطلب دعم، معاقبة، أو فتح تذكرة)")
+    @app_commands.describe(question="ماذا تحتاج؟", member="عضو مستهدف (اختياري)", reason="السبب (اختياري)")
+    async def support(self, interaction: discord.Interaction, question: str, member: discord.Member = None, reason: str = None):
+        await interaction.response.defer(ephemeral=False, thinking=True)
+        
+        from shared.ai_client import ai_client
+        user_prompt = f"المستخدم: {interaction.user.display_name}\nالطلب: {question}"
+        if member:
+            user_prompt += f"\nالمستهدف: {member.display_name}"
+        if reason:
+            user_prompt += f"\nالسبب: {reason}"
+            
+        try:
+            ai_response = await ai_client.chat(self.support_prompt, user_prompt, json_mode=True)
+            if not ai_response or ai_response in ("RATE_LIMIT", "SAFETY_FILTER"):
+                embed = discord.Embed(
+                    description="عذراً، النظام مشغول حالياً. يرجى المحاولة لاحقاً.",
+                    color=discord.Color.red()
+                )
+                return await interaction.followup.send(embed=embed)
+                
+            data = json.loads(ai_response)
+            response_type = data.get("type", "answer")
+            msg = data.get("message", "تم استلام الطلب.")
+            action = data.get("action", "none")
+            ticket_reason = data.get("ticket_reason", "طلب دعم إضافي من المستخدم.")
+            
+            embed = discord.Embed(description=msg, color=discord.Color.red())
+            
+            if response_type == "action" and member:
+                if member.top_role >= interaction.guild.me.top_role:
+                    embed.description += "\n\n❌ لا أملك صلاحية لمعاقبة هذا الشخص."
+                else:
+                    try:
+                        if action == "timeout_10m":
+                            await member.timeout(datetime.timedelta(minutes=10), reason="بواسطة الذكاء الاصطناعي")
+                        elif action == "kick":
+                            await member.kick(reason="بواسطة الذكاء الاصطناعي")
+                        elif action == "ban":
+                            await member.ban(reason="بواسطة الذكاء الاصطناعي")
+                    except discord.Forbidden:
+                        embed.description += "\n\n❌ لم أتمكن من تنفيذ العقوبة لعدم وجود صلاحيات."
+            
+            elif response_type == "ticket":
+                # Create a ticket channel
+                overwrites = {
+                    interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                    interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                    interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                }
+                
+                # إعطاء الصلاحية للرتب الموثوقة (الإدارة)
+                for role_name in ["Owner", "Server Administration", "Founder", "Co Founder"]:
+                    r = discord.utils.get(interaction.guild.roles, name=role_name)
+                    if r:
+                        overwrites[r] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                
+                ticket_channel = await interaction.guild.create_text_channel(
+                    name=f"ticket-{interaction.user.name}",
+                    overwrites=overwrites,
+                    reason="تم إنشاء التذكرة بواسطة المساعد الذكي"
+                )
+                
+                embed.description += f"\n\n🎫 تم فتح تذكرة لك هنا: {ticket_channel.mention}"
+                
+                ticket_embed = discord.Embed(
+                    title="تذكرة دعم فني",
+                    description=f"**السبب الموجه للإدارة:**\n{ticket_reason}",
+                    color=discord.Color.red()
+                )
+                await ticket_channel.send(content=f"{interaction.user.mention}", embed=ticket_embed)
+            
+            await interaction.followup.send(embed=embed)
+            
+        except json.JSONDecodeError:
+            await interaction.followup.send("❌ حدث خطأ في معالجة قرار الذكاء الاصطناعي.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ حدث خطأ: {e}")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SupportCog(bot))

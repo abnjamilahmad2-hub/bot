@@ -49,10 +49,28 @@ class ChatCog(commands.Cog):
 
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
             async with message.channel.typing():
-                thinking_msg = await message.reply("...")
+                thinking_msg = await message.reply(".")
+
+                import asyncio
+                async def animate_thinking():
+                    dots = [".", "..", "..."]
+                    idx = 0
+                    while True:
+                        try:
+                            await asyncio.sleep(0.5)
+                            await thinking_msg.edit(content=dots[idx])
+                            idx = (idx + 1) % len(dots)
+                        except asyncio.CancelledError:
+                            break
+                        except Exception:
+                            pass
+
+                anim_task = asyncio.create_task(animate_thinking())
 
                 user_prompt = f"{message.author.display_name}: {message.content}"
                 reply_text = await ai_client.chat(self.system_prompt, user_prompt)
+
+                anim_task.cancel()
 
                 try:
                     if reply_text and reply_text not in ("RATE_LIMIT", "SAFETY_FILTER"):

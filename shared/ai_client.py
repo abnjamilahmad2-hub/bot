@@ -1,5 +1,4 @@
 import aiohttp
-import json
 import asyncio
 from shared.config import settings
 
@@ -35,33 +34,43 @@ class AIClient:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
             
         session = await self.get_session()
-        try:
-            url = f"{self.base_url}?key={self.api_key}"
-            async with session.post(url, headers=self.headers, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    candidates = data.get('candidates', [])
-                    if candidates:
-                        content = candidates[0].get('content', {}).get('parts', [{}])[0].get('text', '')
-                        if not content:
-                            reason = candidates[0].get('finishReason', 'unknown')
-                            print(f"[AI Info] Empty content. Reason: {reason}. Raw data: {data}", flush=True)
-                            if reason in ["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"]:
-                                return "SAFETY_FILTER"
-                        return content
-                    return ""
-                else:
-                    text = await resp.text()
-                    print(f"[AI Error] {resp.status}: {text}", flush=True)
-                    if resp.status == 429:
-                        return "RATE_LIMIT"
-                    return ""
-        except asyncio.TimeoutError:
-            print("[AI Error] Timeout")
-            return ""
-        except Exception as e:
-            print(f"[AI Error] Exception: {e}")
-            return ""
+        session = await self.get_session()
+        url = f"{self.base_url}?key={self.api_key}"
+        
+        for attempt in range(3):
+            try:
+                async with session.post(url, headers=self.headers, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        candidates = data.get('candidates', [])
+                        if candidates:
+                            content = candidates[0].get('content', {}).get('parts', [{}])[0].get('text', '')
+                            if not content:
+                                reason = candidates[0].get('finishReason', 'unknown')
+                                print(f"[AI Info] Empty content. Reason: {reason}. Raw data: {data}", flush=True)
+                                if reason in ["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"]:
+                                    return "SAFETY_FILTER"
+                            return content
+                        return ""
+                    else:
+                        text = await resp.text()
+                        print(f"[AI Error] Attempt {attempt+1} - {resp.status}: {text}", flush=True)
+                        if resp.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+                        elif resp.status == 503:
+                            await asyncio.sleep(3)
+                            continue
+                        return ""
+            except asyncio.TimeoutError:
+                print(f"[AI Error] Timeout attempt {attempt+1}")
+                await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                print(f"[AI Error] Exception: {e}")
+                return ""
+                
+        return "RATE_LIMIT"
 
     async def close(self):
         if self._session and not self._session.closed:

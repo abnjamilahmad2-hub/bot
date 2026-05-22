@@ -22,17 +22,10 @@ class TSBot(commands.Bot):
         
         # تحميل الفروع (Cogs)
         cogs = [
-            "cogs.setup_cog",
             "cogs.chat_cog",
             "cogs.guard_cog",
-            "cogs.level_cog",
-            "cogs.economy_cog",
             "cogs.support_cog",
-            "cogs.event_cog",
-            "cogs.onboard_cog",
-            "cogs.mod_cog",
-            "cogs.avr_server_cog",
-            "cogs.welcome_cog"
+            "cogs.mod_cog"
         ]
         
         for cog in cogs:
@@ -59,8 +52,7 @@ class TSBot(commands.Bot):
             # إدخال السيرفر مع تفعيل الأنظمة الافتراضية
             guild_stmt = insert(Guild).values(
                 id=guild.id, 
-                name=guild.name, 
-                active_systems="guard_ai,level_ai,economy_ai,support_ai,event_ai"
+                name=guild.name
             ).prefix_with("OR IGNORE")
             await session.execute(guild_stmt)
             await session.commit()

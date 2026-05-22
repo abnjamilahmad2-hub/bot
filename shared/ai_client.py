@@ -3,19 +3,11 @@ import asyncio
 from shared.config import settings
 
 
-FALLBACK_MODELS = [
-    settings.gemini_model,
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-]
-
-BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-
-
 class AIClient:
     def __init__(self):
         self.api_key = settings.gemini_api_key
-        self.models = FALLBACK_MODELS
+        self.model = settings.gemini_model
+        self.openrouter_key = settings.openrouter_api_key
         self.headers = {"Content-Type": "application/json"}
         self._session = None
 
@@ -24,26 +16,87 @@ class AIClient:
             self._session = aiohttp.ClientSession()
         return self._session
 
-    async def _request(self, model, payload, session):
-        """Send a single request to a specific model."""
+    # ── Gemini (Google AI Studio) ──
+    async def _gemini(self, payload, session):
         url = (
-            f"{BASE_URL}/{model}:generateContent"
+            "https://generativelanguage.googleapis.com/v1beta"
+            f"/models/{self.model}:generateContent"
             f"?key={self.api_key}"
         )
         async with session.post(
             url,
             headers=self.headers,
             json=payload,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get(
+                        "content", {}
+                    ).get("parts", [{}])
+                    content = parts[0].get("text", "")
+                    if not content:
+                        reason = candidates[0].get(
+                            "finishReason", "unknown"
+                        )
+                        if reason in (
+                            "SAFETY", "BLOCKLIST",
+                            "PROHIBITED_CONTENT",
+                        ):
+                            return "SAFETY_FILTER"
+                    return content
+                return ""
+            print(
+                f"[AI] Gemini {resp.status}",
+                flush=True,
+            )
+            return None  # None = retry / fallback
+
+    # ── OpenRouter (Free Fallback) ──
+    async def _openrouter(self, system_prompt, user_prompt, session):
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.openrouter_key}",
+        }
+        payload = {
+            "model": "google/gemini-2.0-flash-exp:free",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        async with session.post(
+            url,
+            headers=headers,
+            json=payload,
             timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
-            return resp.status, await resp.text(), await resp.json() if resp.status == 200 else None
+            if resp.status == 200:
+                data = await resp.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get(
+                        "message", {}
+                    ).get("content", "")
+                return ""
+            text = await resp.text()
+            print(
+                f"[AI] OpenRouter {resp.status}: {text}",
+                flush=True,
+            )
+            return None
 
+    # ── Main chat method ──
     async def chat(
         self,
         system_prompt: str,
         user_prompt: str,
         json_mode: bool = False,
     ) -> str:
+        # Build Gemini payload
         payload = {
             "systemInstruction": {
                 "parts": [{"text": system_prompt}]
@@ -55,7 +108,6 @@ class AIClient:
                 }
             ],
         }
-
         if json_mode:
             payload["generationConfig"] = {
                 "responseMimeType": "application/json"
@@ -63,67 +115,41 @@ class AIClient:
 
         session = await self.get_session()
 
-        for model in self.models:
-            for attempt in range(2):
-                try:
-                    url = (
-                        f"{BASE_URL}/{model}:generateContent"
-                        f"?key={self.api_key}"
-                    )
-                    async with session.post(
-                        url,
-                        headers=self.headers,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=60),
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            candidates = data.get("candidates", [])
-                            if candidates:
-                                parts = candidates[0].get(
-                                    "content", {}
-                                ).get("parts", [{}])
-                                content = parts[0].get("text", "")
-                                if not content:
-                                    reason = candidates[0].get(
-                                        "finishReason", "unknown"
-                                    )
-                                    if reason in (
-                                        "SAFETY",
-                                        "BLOCKLIST",
-                                        "PROHIBITED_CONTENT",
-                                    ):
-                                        return "SAFETY_FILTER"
-                                return content
-                            return ""
+        # ─ Try 1: Gemini (one shot, fast timeout) ─
+        try:
+            result = await self._gemini(payload, session)
+            if result is not None:
+                return result
+        except asyncio.TimeoutError:
+            print("[AI] Gemini timeout", flush=True)
+        except Exception as e:
+            print(f"[AI] Gemini error: {e}", flush=True)
 
-                        text = await resp.text()
-                        print(
-                            f"[AI] {model} attempt {attempt+1}"
-                            f" -> {resp.status}",
-                            flush=True,
-                        )
-
-                        if resp.status in (429, 503):
-                            await asyncio.sleep(3)
-                            continue
-                        return ""
-
-                except asyncio.TimeoutError:
-                    print(
-                        f"[AI] {model} timeout attempt {attempt+1}",
-                        flush=True,
-                    )
-                    await asyncio.sleep(2)
-                    continue
-                except Exception as e:
-                    print(f"[AI] Exception: {e}", flush=True)
-                    return ""
-
+        # ─ Try 2: OpenRouter free (immediate fallback) ─
+        if self.openrouter_key:
             print(
-                f"[AI] {model} exhausted, trying next model...",
+                "[AI] Switching to OpenRouter fallback...",
                 flush=True,
             )
+            try:
+                result = await self._openrouter(
+                    system_prompt, user_prompt, session
+                )
+                if result is not None:
+                    return result
+            except asyncio.TimeoutError:
+                print("[AI] OpenRouter timeout", flush=True)
+            except Exception as e:
+                print(f"[AI] OpenRouter error: {e}", flush=True)
+
+        # ─ Try 3: Gemini retry (last chance) ─
+        try:
+            await asyncio.sleep(2)
+            result = await self._gemini(payload, session)
+            if result is not None:
+                return result
+        except Exception:
+            pass
 
         return "RATE_LIMIT"
 

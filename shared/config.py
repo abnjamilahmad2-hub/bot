@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    openrouter_api_key: str = ""
     
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = 8000

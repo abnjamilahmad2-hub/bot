@@ -35,11 +35,11 @@ class WelcomeCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        await self.send_card(member, f"Welcome to !808")
+        await self.send_card(member, "Welcome to !808")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
-        await self.send_card(member, f"Goodbye from !808")
+        await self.send_card(member, "Goodbye from !808")
 
 async def setup(bot):
     await bot.add_cog(WelcomeCog(bot))

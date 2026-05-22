@@ -1,8 +1,9 @@
 import discord
 from discord.ext import commands
-from shared.database import get_db_session
-from shared.models import GuildMember
+from shared.database import get_db_session, ensure_user_and_guild
+from shared.models import Guild, GuildMember
 from sqlalchemy import select
+from shared.cache import get_cache, set_cache
 
 class LevelCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -22,12 +23,6 @@ class LevelCog(commands.Cog):
         # تجاهل الرسائل القصيرة جداً لعدم رفع المستوى بالسبام
         if char_count < 5:
             return 
-            
-        from shared.database import get_db_session, ensure_user_and_guild
-        from shared.models import Guild, GuildMember
-        from sqlalchemy import select
-        from shared.cache import get_cache, set_cache
-            
         async for session in get_db_session():
             # التأكد من تفعيل نظام المستويات
             await ensure_user_and_guild(session, message.author.id, message.guild.id, message.guild.name)
@@ -83,11 +78,6 @@ class LevelCog(commands.Cog):
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         # التحقق من حصول العضو على البوست (Boost)
         if not before.premium_since and after.premium_since:
-            from shared.database import get_db_session, ensure_user_and_guild
-            from shared.models import Guild, GuildMember
-            from sqlalchemy import select
-            from shared.cache import get_cache, set_cache
-            
             async for session in get_db_session():
                 await ensure_user_and_guild(session, after.id, after.guild.id, after.guild.name)
                 

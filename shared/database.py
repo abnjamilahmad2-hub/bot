@@ -1,14 +1,12 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select
+from sqlalchemy import insert, select, text
 from shared.config import settings
 
 # تفعيل الـ Connection Pooling لتسريع الاستجابة واستيعاب الضغط
 engine = create_async_engine(
     settings.database_url,
     echo=False,
-    future=True,
 )
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
@@ -32,7 +30,7 @@ async def ensure_user_and_guild(session: AsyncSession, user_id: int, guild_id: i
 
     from shared.models import User, Guild
     
-    # استخدام UPSERT لمنع تضارب البيانات في حالات الضغط
+    # استخدام INSERT OR IGNORE لمنع تضارب البيانات في حالات الضغط
     user_stmt = insert(User).values(id=user_id).prefix_with("OR IGNORE")
     await session.execute(user_stmt)
     

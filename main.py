@@ -51,7 +51,7 @@ class TSBot(commands.Bot):
     async def on_guild_join(self, guild: discord.Guild):
         from shared.database import get_db_session
         from shared.models import Guild
-        from sqlalchemy.dialects.postgresql import insert
+        from sqlalchemy import insert
         
         async for session in get_db_session():
             # إدخال السيرفر مع تفعيل الأنظمة الافتراضية
@@ -59,7 +59,7 @@ class TSBot(commands.Bot):
                 id=guild.id, 
                 name=guild.name, 
                 active_systems="guard_ai,level_ai,economy_ai,support_ai,event_ai"
-            ).on_conflict_do_nothing()
+            ).prefix_with("OR IGNORE")
             await session.execute(guild_stmt)
             await session.commit()
             

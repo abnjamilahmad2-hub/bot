@@ -2,10 +2,23 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import insert, select, text
 from shared.config import settings
+import logging
 
-# تفعيل الـ Connection Pooling لتسريع الاستجابة واستيعاب الضغط
+logger = logging.getLogger("TS_BOT")
+
+# تحديد رابط قاعدة البيانات مع الرجوع التلقائي لـ SQLite
+_db_url = settings.database_url
+
+# إذا كان الرابط PostgreSQL لكن asyncpg غير مثبت، نتحول تلقائياً لـ SQLite
+if "postgresql" in _db_url or "asyncpg" in _db_url:
+    try:
+        import asyncpg  # noqa: F401
+    except ImportError:
+        logger.warning("DATABASE_URL points to PostgreSQL but asyncpg is not installed. Falling back to SQLite.")
+        _db_url = "sqlite+aiosqlite:///./bot.db"
+
 engine = create_async_engine(
-    settings.database_url,
+    _db_url,
     echo=False,
 )
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)

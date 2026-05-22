@@ -6,11 +6,9 @@ from shared.config import settings
 
 # تفعيل الـ Connection Pooling لتسريع الاستجابة واستيعاب الضغط
 engine = create_async_engine(
-    settings.database_url, 
-    echo=False, 
-    pool_size=20, 
-    max_overflow=10,
-    pool_pre_ping=True
+    settings.database_url,
+    echo=False,
+    future=True,
 )
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
@@ -35,10 +33,10 @@ async def ensure_user_and_guild(session: AsyncSession, user_id: int, guild_id: i
     from shared.models import User, Guild
     
     # استخدام UPSERT لمنع تضارب البيانات في حالات الضغط
-    user_stmt = insert(User).values(id=user_id).on_conflict_do_nothing()
+    user_stmt = insert(User).values(id=user_id).prefix_with("OR IGNORE")
     await session.execute(user_stmt)
     
-    guild_stmt = insert(Guild).values(id=guild_id, name=guild_name).on_conflict_do_nothing()
+    guild_stmt = insert(Guild).values(id=guild_id, name=guild_name).prefix_with("OR IGNORE")
     await session.execute(guild_stmt)
     
     await session.commit()

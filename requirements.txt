@@ -1,6 +1,6 @@
 discord.py>=2.3.0
 SQLAlchemy>=2.0.0
-asyncpg
+aiosqlite
 alembic
 redis
 pydantic>=2.0.0

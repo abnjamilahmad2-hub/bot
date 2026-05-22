@@ -73,3 +73,6 @@ class TSBot(commands.Bot):
 if __name__ == "__main__":
     bot = TSBot()
     bot.run(settings.discord_token)
+
+# Added custom cogs
+INITIAL_EXTENSIONS = INITIAL_EXTENSIONS + ["cogs.avr_server_cog", "cogs.welcome_cog"]

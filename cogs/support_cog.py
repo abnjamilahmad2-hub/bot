@@ -1,108 +1,103 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import json
-import asyncio
-from shared.ai_client import ai_client
+from shared.database import get_db_session, ensure_user_and_guild
+from shared.models import Guild
+from sqlalchemy import select
+from shared.cache import get_cache, set_cache
+
+# الرتب التي تُعطي صلاحية تنفيذ أي أمر دون اعتراض
+TRUSTED_ROLES = {"Owner", "Server Administration", "Founder", "Co Founder", "High"}
+
+# نص القواعد (مُجمل للـ AI)
+RULES_TEXT = """قواعد السيرفر:
+1. يجب احترام جميع الأعضاء وعدم مضايقتهم بأي شكل من الأشكال.
+2. يمنع إزعاج الأعضاء أو التنمر عليهم.
+3. يجب احترام خصوصية الأعضاء وعدم مضايقتهم أو إحراجهم.
+4. يمنع نشر صور مسيئة أو غير لائقة أو ما شابه.
+5. يمنع الترويج لسيرفر آخر علنًا أو بشكل خاص.
+6. السيرفر غير مسؤول عن المشاكل الشخصية، يرجى حلها خارج السيرفر.
+7. يمنع دخول السيرفر بصورة أو اسم غير لائق.
+8. لا يجوز نشر روابط أو صور مثل صور القتل أو الصور الفاضحة.
+9. يمنع إرسال الرسائل المكررة (Spam) أو الإشارات العشوائية (Mentions) دون سبب واضح.
+10. يجب الالتزام بموضوع كل قناة واستخدام القنوات المخصصة لكل غرض.
+11. يمنع إثارة الجدل في المواضيع السياسية أو الدينية أو العنصرية.
+12. يمنع استخدام برامج تغيير الصوت أو إصدار أصوات مزعجة داخل القنوات الصوتية.
+13. يمنع انتحال شخصية أي عضو أو أفراد طاقم الإدارة.
+14. يمنع نشر أي روابط مشبوهة أو ملفات قد تضر بأجهزة الأعضاء.
+15. الإدارة لها الحق في اتخاذ القرار المناسب تجاه أي تصرف غير مذكور في القوانين.
+16. نتبع قواعد الديسكورد الرسمية.
+"""
 
 class SupportCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.support_prompt = """أنت المساعد الفني والإداري الذكي (Support AI) لسيرفر The Sanctuary. لديك صلاحيات مطلقة!
-مهمتك: قراءة مشكلة المستخدم ومحاولة حلها فوراً بناءً على خبرتك. إذا لزم الأمر، يمكنك تنفيذ إجراءات نظامية.
-يجب أن ترد بصيغة JSON فقط، بدون أي نصوص إضافية خارج الـ JSON:
-{
-  "resolved": true|false, 
-  "reply": "الرد الموجه للمستخدم", 
-  "action": "none|remove_user|block_user|mute_user|delete_messages",
-  "target_user_id": "رقم الأيدي إذا كان الإجراء يستهدف مستخدم",
-  "amount": "رقم إذا كان الإجراء delete_messages"
-}
-اختر resolved: true إذا كان حلك كافياً، و false إذا كانت المشكلة تتطلب تدخل بشري لا يمكنك فعله."""
 
-    @discord.app_commands.command(name="support", description="افتح تذكرة دعم فني وسيحاول الذكاء الاصطناعي مساعدتك أو حلها فوراً")
-    @discord.app_commands.describe(issue="وصف المشكلة التي تواجهها", target_user="مستخدم متعلق بالمشكلة (اختياري)")
-    async def support_command(self, interaction: discord.Interaction, issue: str, target_user: discord.Member = None):
-        await interaction.response.send_message("يتم الآن تحليل مشكلتك وتنفيذ الإجراءات اللازمة...", ephemeral=True)
-        
-        target_info = f"المستخدم المستهدف: {target_user.name} (ID: {target_user.id})" if target_user else "لا يوجد مستخدم مستهدف."
-        user_prompt = f"صاحب المشكلة: {interaction.user.name}\nالمشكلة: {issue}\n{target_info}"
-        
+    def _is_trusted(self, member: discord.Member) -> bool:
+        return any(role.name in TRUSTED_ROLES for role in member.roles)
+
+    async def _ensure_guild(self, guild: discord.Guild):
+        async for session in get_db_session():
+            await ensure_user_and_guild(session, self.bot.user.id, guild.id, guild.name)
+            stmt = select(Guild).where(Guild.id == guild.id)
+            result = await session.execute(stmt)
+            guild_record = result.scalar_one_or_none()
+            if not guild_record:
+                guild_record = Guild(id=guild.id, name=guild.name)
+                session.add(guild_record)
+                await session.commit()
+
+    async def _apply_timeout(self, member: discord.Member, minutes: int, reason: str):
         try:
-            # إغلاق الـ json_mode لحل مشكلة الموديلات المجانية التي ترفض الطلب
-            response = await ai_client.chat(self.support_prompt, user_prompt, json_mode=False)
-            if response == "RATE_LIMIT":
-                await interaction.edit_original_response(content="⚠️ لقد تجاوزت الحد المسموح للاستخدام المجاني للذكاء الاصطناعي (Rate Limit) حالياً بسبب ضغط الطلبات. الرجاء المحاولة بعد بضع دقائق.")
-                return
-            if not response or response == "SAFETY_FILTER":
-                # إذا حدث بلوك من الموديل، سنتجاهل الفلتر ونصنع رد افتراضي يحولها للإدارة لكي لا يرى المستخدم أي طبقة حماية
-                response = '{"resolved": false, "reply": "استلمت طلبك وسأقوم بتحويله للإدارة فوراً للتعامل معه.", "action": "none"}'
-                
-            clean_response = response.strip()
-            if clean_response.startswith("```json"):
-                clean_response = clean_response[7:]
-            if clean_response.startswith("```"):
-                clean_response = clean_response[3:]
-            if clean_response.endswith("```"):
-                clean_response = clean_response[:-3]
-            clean_response = clean_response.strip()
-                
-            try:
-                data = json.loads(clean_response)
-            except json.JSONDecodeError:
-                await interaction.edit_original_response(content="حدث خطأ في استيعاب الرد الذكي. الرجاء التواصل مع الإدارة.")
-                return
-                
-            resolved = data.get("resolved")
-            reply = data.get("reply", "تم اتخاذ الإجراء.")
-            action = data.get("action", "none")
-            
-            # تنفيذ الإجراءات
-            action_result = ""
-            if action != "none":
-                try:
-                    if action == "remove_user" and target_user:
-                        await target_user.kick(reason="بواسطة Support AI")
-                        action_result = "تم طرد المستخدم بنجاح."
-                    elif action == "block_user" and target_user:
-                        await target_user.ban(reason="بواسطة Support AI")
-                        action_result = "تم حظر المستخدم بنجاح."
-                    elif action == "mute_user" and target_user:
-                        import datetime
-                        await target_user.timeout(datetime.timedelta(minutes=10), reason="بواسطة Support AI")
-                        action_result = "تم كتم المستخدم لمدة 10 دقائق."
-                    elif action == "delete_messages":
-                        amount = int(data.get("amount", 5))
-                        await interaction.channel.purge(limit=amount)
-                        action_result = f"تم مسح {amount} رسائل."
-                except discord.Forbidden:
-                    action_result = "ليس لدي صلاحيات كافية لتنفيذ هذا الإجراء."
-                except Exception as e:
-                    action_result = f"حدث خطأ أثناء التنفيذ: {e}"
-            
-            if resolved:
-                msg = f"💡 **الرد الذكي السريع:**\n{reply}\n\n*نتيجة التنفيذ:* {action_result}\n\n*إذا لم يحل هذا مشكلتك، يمكنك طلب التحدث مع الإدارة.*"
-                await interaction.edit_original_response(content=msg)
-            else:
-                msg = f"🤖 **الرد الذكي:**\n{reply}\n\n*نتيجة التنفيذ:* {action_result}\n\n⚠️ **جاري تحويل تذكرتك لفريق الإدارة ليتم التدخل البشري.**"
-                await interaction.edit_original_response(content=msg)
-                
-                if isinstance(interaction.channel, discord.TextChannel):
-                    thread = await interaction.channel.create_thread(
-                        name=f"تذكرة دعم: {interaction.user.name}",
-                        type=discord.ChannelType.public_thread,
-                        reason="دعم فني"
-                    )
-                    await thread.send(f"إشعار للإدارة: {interaction.user.mention} بحاجة للمساعدة!\n**المشكلة:** {issue}\n**رد الذكاء الاصطناعي:** {reply}\n**تنفيذ النظام:** {action_result}")
-                
-        except Exception as e:
-            await interaction.edit_original_response(content=f"حدث خطأ أثناء الاتصال بالدعم الذكي: {e}")
+            await member.timeout(discord.utils.utcnow() + discord.timedelta(minutes=minutes), reason=reason)
+        except Exception:
+            pass
 
-    @support_command.error
-    async def support_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-        if isinstance(error, discord.app_commands.errors.TransformerError):
-            await interaction.response.send_message("❌ الرجاء منشنة المستخدم بشكل صحيح أو عدم كتابة أي شيء إذا لم يكن هناك مستخدم مستهدف.", ephemeral=True)
+    @app_commands.command(name="support", description="استخدم أوامر الدعم وفق القوانين.")
+    @app_commands.describe(action="الإجراء المطلوب (ban/timeout/kick/...)", target="العضو المستهدف", reason="سبب الإجراء")
+    @app_commands.default_permissions(administrator=True)
+    async def support(self, interaction: discord.Interaction, action: str, target: discord.Member, reason: str = "لم يتم تقديم سبب"):
+        # تقييد السيرفر فقط لسيرفر !808
+        if interaction.guild.id != 808:
+            await interaction.response.send_message("❌ هذا الأمر مخصص لسيرفر !808 فقط.", ephemeral=True)
+            return
+
+        await self._ensure_guild(interaction.guild)
+        executor = interaction.user
+
+        # إذا كان المنفذ من الرتب الموثوقة، نفّذ مباشرة
+        if self._is_trusted(executor):
+            await self._execute_action(interaction, action, target, reason)
+            return
+
+        # بناء Prompt للذكاء الاصطناعي لتقييم الإجراء
+        prompt = f"قواعد السيرفر هي:\n{RULES_TEXT}\n\nالمستخدم {executor.display_name} يرغب في تنفيذ {action} على {target.display_name} مع السبب: {reason}.\n\nهل هذا الإجراء مسموح وفق القواعد؟ أجب بـ JSON فقط:\n{{\"allowed\": true|false, \"action\": \"timeout_10m\"|\"timeout_30m\"|\"kick\"|\"ban\"|\"none\", \"reason\": \"شرح مختصر\"}}"
+        ai_response = await ai_client.chat(prompt, json_mode=True)
+        try:
+            data = json.loads(ai_response)
+        except Exception:
+            data = {"allowed": False, "action": "none", "reason": "فشل تحليل الذكاء الاصطناعي"}
+
+        if not data.get("allowed"):
+            await interaction.response.send_message(f"❌ الإجراء غير مسموح: {data.get('reason', 'لم يحدد السبب')}", ephemeral=True)
+            return
+
+        await self._execute_action(interaction, data.get("action", action), target, data.get("reason", reason))
+
+    async def _execute_action(self, interaction: discord.Interaction, action: str, target: discord.Member, reason: str):
+        if action.startswith("timeout"):
+            minutes = int(action.split("_")[1].replace("m", ""))
+            await self._apply_timeout(target, minutes, reason)
+            await interaction.response.send_message(f"⏱️ تم كتم {target.mention} لمدة {minutes} دقيقة.\n**السبب:** {reason}")
+        elif action == "kick":
+            await target.kick(reason=reason)
+            await interaction.response.send_message(f"👢 تم طرد {target.mention}.\n**السبب:** {reason}")
+        elif action == "ban":
+            await target.ban(reason=reason)
+            await interaction.response.send_message(f"🔨 تم حظر {target.mention}.\n**السبب:** {reason}")
         else:
-            await interaction.response.send_message(f"❌ حدث خطأ: {error}", ephemeral=True)
+            await interaction.response.send_message("⚠️ فعل غير مدعوم.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SupportCog(bot))

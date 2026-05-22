@@ -1,55 +1,44 @@
 import discord
 from discord.ext import commands
-import asyncio
 from shared.ai_client import ai_client
 
 class ChatCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # تعريف هوية البوت
-        self.system_prompt = """أنت TS BOT (The Sanctuary Bot)، أذكى وأقوى بوت ديسكورد عربي.
-أنت تدير وتحمي السيرفر المسمى "The Sanctuary".
-شخصيتك: ذكية جداً، غامضة قليلاً لكنها محترمة وتجيب بأسلوب راقٍ. أنت تدرك أنك ذكاء اصطناعي قوي مدمج في كل أنظمة السيرفر.
-مهمتك: مساعدة الأعضاء والرد عليهم بطريقة طبيعية وكأنك شخص حقيقي.
+        self.system_prompt = """أنت شخص حقيقي اسمك TS، مسؤول عن سيرفر !808 في ديسكورد.
+شخصيتك: واثق، ذكي، تتحدث بلهجة عربية طبيعية وعفوية. لا تقل أبداً أنك بوت أو ذكاء اصطناعي أو برنامج.
+تتصرف وكأنك إنسان حقيقي يدير السيرفر.
+أسلوبك: مباشر، أحياناً ساخر بشكل لطيف، ودود مع الناس الطيبين وحازم مع المخالفين.
 قواعد صارمة:
-1. لا تستخدم أبدًا أي واجهات (UI) أو رسائل مضمنة (Embeds).
-2. يجب أن تكون ردودك نصية طبيعية.
-3. تحدث باللغة العربية حصراً وبشكل واضح ومفهوم.
-4. إذا تم سؤالك عن هويتك، اذكر أنك TS BOT حامي الملاذ."""
+1. لا تستخدم أبدًا كلمات مثل "ذكاء اصطناعي" أو "AI" أو "بوت" أو "نموذج لغوي" عند وصف نفسك.
+2. لا تستخدم Embeds أو واجهات. ردودك نصية طبيعية فقط.
+3. تحدث بالعربية حصراً بشكل طبيعي ومفهوم.
+4. لو سألوك من أنت قول: "أنا TS، المسؤول عن !808".
+5. لا تبدأ ردودك بـ "مرحباً" أو "أهلاً" كل مرة. كن عفوي."""
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # منع البوت من الرد على نفسه أو على البوتات الأخرى
         if message.author.bot:
             return
 
-        # التحقق مما إذا كان البوت قد تم عمل منشن له
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
-            # 1. إظهار حالة الكتابة (Typing Indicator) في ديسكورد
             async with message.channel.typing():
+                thinking_msg = await message.reply("🤔")
                 
-                # 2. إرسال رسالة توضح أنه يفكر (Animation مبدئي)
-                thinking_msg = await message.reply("أفكر... 🤔")
-                
-                # إعداد الطلب للذكاء الاصطناعي
-                user_prompt = f"المستخدم {message.author.display_name} يقول: {message.content}"
-                
-                # 3. إرسال الطلب لـ OpenRouter
+                user_prompt = f"{message.author.display_name}: {message.content}"
                 reply_text = await ai_client.chat(self.system_prompt, user_prompt)
                 
-                # 4. تعديل الرسالة بالرد الطبيعي وتقسيمه إذا كان طويلاً
                 try:
-                    if reply_text:
+                    if reply_text and reply_text not in ("RATE_LIMIT", "SAFETY_FILTER"):
                         if len(reply_text) <= 2000:
                             await thinking_msg.edit(content=reply_text)
                         else:
-                            # تقسيم الرسالة إذا تجاوزت 2000 حرف
                             chunks = [reply_text[i:i+2000] for i in range(0, len(reply_text), 2000)]
                             await thinking_msg.edit(content=chunks[0])
                             for chunk in chunks[1:]:
                                 await message.reply(content=chunk)
                     else:
-                        await thinking_msg.edit(content="عذراً، أواجه صعوبة في التواصل مع نظامي المركزي حالياً.")
+                        await thinking_msg.edit(content="ما قدرت أرد حالياً، جرب بعد شوي.")
                 except discord.NotFound:
                     pass
 

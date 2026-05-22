@@ -1,0 +1,18 @@
+{
+  "services": [
+    {
+      "name": "ts-bot",
+      "build": {
+        "dockerfilePath": "./Dockerfile",
+        "context": "."
+      },
+      "buildCommand": "pip install -r requirements.txt",
+      "startCommand": "python main.py"
+    }
+  ],
+  "env": {
+    "DISCORD_TOKEN": "${DISCORD_TOKEN}",
+    "DATABASE_URL": "${DATABASE_URL}",
+    "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+  }
+}

@@ -9,11 +9,10 @@ class Guild(Base):
     name = Column(String(255))
     welcome_message = Column(Text, nullable=True, default="مرحباً بك في السيرفر!")
     bye_message = Column(Text, nullable=True, default="وداعاً، نتمنى لك التوفيق!")
-    active_systems = Column(Text, nullable=True, default="guard_ai,level_ai,economy_ai,onboard_ai,event_ai,support_ai")
+    active_systems = Column(Text, nullable=True, default="guard_ai,level_ai,onboard_ai,event_ai,support_ai")
     welcome_channel_id = Column(BigInteger, nullable=True)
     bye_channel_id = Column(BigInteger, nullable=True)
     events_channel_id = Column(BigInteger, nullable=True)
-    economy_mode = Column(String(50), nullable=True, default="both") # "global", "local", "both"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class User(Base):
@@ -28,7 +27,6 @@ class GuildMember(Base):
     guild_id = Column(BigInteger, ForeignKey("guilds.id"), primary_key=True)
     level = Column(Integer, default=0)
     characters_typed = Column(Integer, default=0)
-    local_balance = Column(Integer, default=0)
     
     user = relationship("User", backref="guild_memberships")
     guild = relationship("Guild", backref="members")

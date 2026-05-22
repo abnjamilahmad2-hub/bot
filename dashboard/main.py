@@ -34,13 +34,13 @@ async def home(request: Request):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>لوحة تحكم TS BOT</title>
         <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f111a; color: #fff; text-align: center; padding: 50px; margin: 0; }
-            .container { max-width: 800px; margin: 0 auto; background: rgba(30, 30, 40, 0.8); padding: 40px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-            h1 { color: #5865F2; font-size: 2.5em; margin-bottom: 10px; }
-            p { font-size: 1.2em; line-height: 1.8; color: #b9bbbe; }
-            .btn { display: inline-block; padding: 12px 24px; background: #5865F2; color: #fff; text-decoration: none; border-radius: 8px; margin-top: 30px; font-weight: bold; transition: background 0.3s; }
-            .btn:hover { background: #4752c4; }
-            .status { margin-top: 40px; padding: 20px; background: rgba(0, 255, 100, 0.1); border-left: 5px solid #00ff64; border-radius: 5px; text-align: right; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #2c2f33; color: #fff; text-align: center; padding: 50px; margin: 0; }
+            .container { max-width: 800px; margin: 0 auto; background: rgba(30, 30, 40, 0.8); padding: 40px; border-left: 6px solid #ff0000; border-radius: 5px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+            h1 { color: #ff4500; font-size: 2.5em; margin-bottom: 10px; }
+            p { font-size: 1.2em; line-height: 1.8; color: #dddddd; }
+            .btn { display: inline-block; padding: 12px 24px; background: #ff4500; color: #fff; text-decoration: none; border-radius: 8px; margin-top: 30px; font-weight: bold; transition: background 0.3s; }
+            .btn:hover { background: #e03e00; }
+            .status { margin-top: 40px; padding: 20px; background: rgba(255, 69, 0, 0.1); border-left: 5px solid #ff4500; border-radius: 5px; text-align: right; }
             .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin-top: 30px; }
             .stat-card { background: rgba(255,255,255,0.05); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); }
             .stat-card h2 { color: #5865F2; font-size: 2em; margin: 0; }

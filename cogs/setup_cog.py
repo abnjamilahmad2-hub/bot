@@ -6,60 +6,55 @@ from shared.models import Guild
 from sqlalchemy import select as sql_select
 
 class SetupCog(commands.Cog):
+    """Cog for initial server setup and system activation."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(name="setup", description="إعداد السيرفر وتهيئة البوت (TS BOT)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
-        welcome_channel="قناة الترحيب", 
+        welcome_channel="قناة الترحيب",
         bye_channel="قناة التوديع",
-        events_channel="قناة الفعاليات",
-        economy_mode="نظام الاقتصاد (عالمي/محلي/الاثنين معاً)"
+        events_channel="قناة الفعاليات"
     )
-    @app_commands.choices(economy_mode=[
-        app_commands.Choice(name="كلاهما (Both)", value="both"),
-        app_commands.Choice(name="عالمي (Global - حقيقي)", value="global"),
-        app_commands.Choice(name="محلي (Local - وهمي للسيرفر)", value="local")
-    ])
     async def setup_command(
-        self, 
-        interaction: discord.Interaction, 
-        welcome_channel: discord.TextChannel = None, 
+        self,
+        interaction: discord.Interaction,
+        welcome_channel: discord.TextChannel = None,
         bye_channel: discord.TextChannel = None,
         events_channel: discord.TextChannel = None,
-        economy_mode: str = None
     ):
-        """أمر إعداد السيرفر بخيارات متعددة"""
-        
-        eco_mode_val = economy_mode if economy_mode else "both"
-        
-        # إنشاء واجهة اختيارات (Select Menu) لاختيار التفرعات التي سيتم تفعيلها
+        """أمر إعداد السيرفر بخيارات متعددة بدون نظام اقتصاد."""
+        # Create selection menu for activating desired systems
         options = [
             discord.SelectOption(label="تفعيل حماية الذكاء الاصطناعي", description="تشغيل Guard AI", value="guard_ai", emoji="🛡️"),
             discord.SelectOption(label="تفعيل نظام المستويات الذكي", description="تشغيل Level AI (بالأحرف)", value="level_ai", emoji="📊"),
             discord.SelectOption(label="تفعيل الترحيب الذكي / التحقق", description="تشغيل Onboard AI", value="onboard_ai", emoji="👋"),
-            discord.SelectOption(label="تفعيل الاقتصاد", description="تشغيل Economy AI", value="economy_ai", emoji="💰"),
             discord.SelectOption(label="تفعيل الفعاليات التلقائية", description="تشغيل Event AI لتنشيط السيرفر", value="event_ai", emoji="🎉"),
         ]
-        
         select = discord.ui.Select(
-            placeholder="اختر الأنظمة المراد تفعيلها...", 
-            min_values=1, 
-            max_values=len(options), 
-            options=options
+            placeholder="اختر الأنظمة المراد تفعيلها...",
+            min_values=1,
+            max_values=len(options),
+            options=options,
         )
-        
+
         async def select_callback(interaction_inner: discord.Interaction):
             selected_str = ",".join(select.values)
             async for session in get_db_session():
-                await ensure_user_and_guild(session, interaction_inner.user.id, interaction_inner.guild.id, interaction_inner.guild.name)
+                await ensure_user_and_guild(
+                    session,
+                    interaction_inner.user.id,
+                    interaction_inner.guild.id,
+                    interaction_inner.guild.name,
+                )
                 stmt = sql_select(Guild).where(Guild.id == interaction_inner.guild.id)
                 result = await session.execute(stmt)
                 guild_record = result.scalar_one_or_none()
                 if guild_record:
                     guild_record.active_systems = selected_str
-                    guild_record.economy_mode = eco_mode_val
+                    # economy_mode removed per user request
                     if welcome_channel:
                         guild_record.welcome_channel_id = welcome_channel.id
                     if bye_channel:
@@ -67,13 +62,7 @@ class SetupCog(commands.Cog):
                     if events_channel:
                         guild_record.events_channel_id = events_channel.id
                     await session.commit()
-                    
-            # ترجمة القيم إلى نصوص واضحة للمستخدم
-            selected_names = [opt.label for opt in options if opt.value in select.values]
             await interaction_inner.response.send_message(
-                f"✅ **تم حفظ الإعدادات بنجاح.**\n\n"
-                f"⚙️ **الأنظمة المفعلة:** {', '.join(selected_names)}\n"
-                f"💳 **نظام الاقتصاد:** {eco_mode_val.upper()}\n"
                 f"👋 **قناة الترحيب:** {welcome_channel.mention if welcome_channel else 'لم تحدد'}\n"
                 f"👋 **قناة التوديع:** {bye_channel.mention if bye_channel else 'لم تحدد'}\n"
                 f"🎉 **قناة الفعاليات:** {events_channel.mention if events_channel else 'تلقائية'}",

@@ -7,19 +7,9 @@ import datetime
 class ModCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.report_prompt = """أنت نظام مراجعة البلاغات (Report System) لسيرفر !808.
-يتم إرسال بلاغ ضد عضو معين مع السبب. مهمتك قراءة البلاغ وتقييم المخالفة بناءً على قوانين السيرفر.
-بناءً على التقييم، قرر العقوبة المناسبة.
-العقوبات الممكنة:
-- timeout_10m (مخالفة خفيفة، إزعاج خفيف)
-- timeout_30m (مخالفة متوسطة، سبام)
-- timeout_1h (مخالفة قوية، إساءة واضحة)
-- kick (مخالفة كبيرة تستدعي الطرد)
-- ban (مخالفة حرجة، نشر روابط خطيرة، انتحال إدارة)
-- none (إذا كان البلاغ غير منطقي أو كيدي)
-
-رد فقط بصيغة JSON:
-{"action": "العقوبة", "reason_for_action": "تفسيرك لسبب العقوبة لكي يظهر للمستخدم"}"""
+        self.report_prompt = """أنت نظام مراجعة بلاغات !808.
+العقوبات المتاحة: timeout_10m/timeout_30m/timeout_1h/kick/ban/none.
+رد بـ JSON فقط: {"action": "العقوبة", "reason_for_action": "سبب لليوزر"}"""
 
     @app_commands.command(name="clear", description="مسح رسائل من القناة")
     @app_commands.describe(amount="عدد الرسائل")

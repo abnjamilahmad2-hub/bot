@@ -1,0 +1,16 @@
+discord.py>=2.3.0
+SQLAlchemy>=2.0.0
+asyncpg
+alembic
+redis
+pydantic>=2.0.0
+pydantic-settings
+structlog
+fastapi
+uvicorn
+jinja2
+aiohttp
+orjson
+apscheduler
+humanize
+python-dotenv

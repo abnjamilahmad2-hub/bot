@@ -25,7 +25,8 @@ class TSBot(commands.Bot):
             "cogs.chat_cog",
             "cogs.guard_cog",
             "cogs.support_cog",
-            "cogs.mod_cog"
+            "cogs.mod_cog",
+            "cogs.welcome_cog"
         ]
         
         for cog in cogs:
